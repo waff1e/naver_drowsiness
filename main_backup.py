@@ -3,13 +3,6 @@ import numpy as np
 import threading
 import time
 from playsound import playsound
-import time
-import vlc
-
-def play():
-    p = vlc.MediaPlayer('sample.mp3')
-    p.play()
-    #playsound('sample.mp3')
 
 def zero():
     print(f"0단계 진입")
@@ -19,7 +12,6 @@ def one():
 
 def two():
     print(f"2단계 진입")
-
 
 def three():
     print(f"3단계 진입")
@@ -34,10 +26,6 @@ def not_zero():
     print("")
 
 def alert_level(x):
-
-    sound=threading.Thread(name="sound_Thread", target=play, daemon=True)
-    sound.start()
-
     dispatch= [zero,
                not_zero,
                one,
