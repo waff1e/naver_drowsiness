@@ -33,7 +33,7 @@ frame  = CSI.readFrame()
 
 # 여기에 타이머 관련 코드 삽입
 def detectTimer():
-    timer = threading.Timer(1, detectTimer)
+    timer = threading.Timer(0.01, detectTimer)
     timer.name = "Detector_Timer"
     timer.daemon = True
 
@@ -51,7 +51,9 @@ def detectTimer():
             strIsEyes = "false"
             if alertLevel < 5:
                 alertLevel += 1
+	
             AlertSound(alertLevel)
+            print('ooo')
         else:
             #눈을 뜬 상태
             strIsEyes = "true"
