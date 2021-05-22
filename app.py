@@ -1,8 +1,13 @@
+import time
+from notification import *
+from csicamera import *
+from eyedetector import *
 import cv2
 import threading
 import sys
+import numpy as np
 from PyQt5.QtWidgets import QApplication, QWidget, QPushButton, QHBoxLayout, QVBoxLayout, QLabel, QMessageBox
-from PyQt5.QtGui import QPixmap, QImage
+from PyQt5.QtGui import QPixmap, QImage, qRgb
 
 running = False
 
@@ -10,52 +15,180 @@ class App(QWidget):
 
     def __init__(self):
         super().__init__()
+
+        # CSI.openCameraUSB(0)
+
+        self.strIsFace = "false"  # 얼굴 있는지 없는지
+        self.strIsEyes = "false"  # 눈 있는지 없는지
+        self.alertLevel = 0  # 경고 단계
+        self.x1 = 0
+        self.y1 = 0
+        self.x2 = 0
+        self.y2 = 0
+        self.running = False
+
         self.initUI()
 
+    def numpyQImage(self,image):
+        qImg = QImage()
+        if image.dtype == np.uint8:
+            if len(image.shape) == 2:
+                channels = 1
+                height, width = image.shape
+                bytesPerLine = channels * width
+                qImg = QImage(
+                    image.data, width, height, bytesPerLine, QImage.Format_Indexed8
+                )
+                qImg.setColorTable([qRgb(i, i, i) for i in range(256)])
+            elif len(image.shape) == 3:
+                if image.shape[2] == 3:
+                    height, width, channels = image.shape
+                    bytesPerLine = channels * width
+                    qImg = QImage(
+                        image.data, width, height, bytesPerLine, QImage.Format_RGB888
+                    )
+                elif image.shape[2] == 4:
+                    height, width, channels = image.shape
+                    bytesPerLine = channels * width
+                    fmt = QImage.Format_ARGB32
+                    qImg = QImage(
+                        image.data, width, height, bytesPerLine, QImage.Format_ARGB32
+                    )
+        return qImg
+
+
+
     def play(self):
-        global running
-        running = True
-        th = threading.Thread(target=self.run)
-        th.start()
+        self.running = True
+
+        # th = threading.Thread(target=self.run)
+        # th.daemon = True
+        # th.start()
         print("Play!")
 
     def stop(self):
-        global running
-        running = False
+        self.running = False
         print("Stop!")
 
     def run(self):
-        cap = cv2.VideoCapture(0)
+        CSI = CSICamera(640, 480, 640, 480, 30)
+        CSI.openCameraUSB(0)
 
-        width = cap.get(cv2.CAP_PROP_FRAME_WIDTH)
-        height = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
+        width = CSI.getWidth()
+        height = CSI.getHeight()
 
         self.label.resize(int(width), int(height))
 
-        while running:
-            ret, img = cap.read()
+        ED = EyeDetector('load_file')
 
-            if ret:
-                img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-                h, w, c = img.shape
-                qImg = QImage(img.data, w, h, w*c, QImage.Format_RGB888)
-                pixmap = QPixmap.fromImage(qImg)
-                self.label.setPixmap(pixmap)
+
+
+        if  CSI.isCameraOpened() is False:
+            print("카메라에 연결되어있지 않습니다.")
+            exit()
+
+        cv2.namedWindow("frame")
+        if ED.isModelNotLoaded():
+            print("모델 데이터 로드에 실패하였습니다.")
+            exit()
+
+        frame  = CSI.readFrame()
+
+# 여기에 타이머 관련 코드 삽입
+        def detectTimer():
+            timer = threading.Timer(1, detectTimer)
+            timer.name = "Detector_Timer"
+            timer.daemon = True
+
+            isFace, face_frame, self.x1, self.y1, self.x2, self.y2 = ED.CalculateFaceFrame(frame)
+
+
+            if isFace is True:
+                self.strIsFace = "true"
+                if ED.DetectEyes(face_frame) is False:
+                    #눈 감긴 상태
+                    self.strIsEyes = "false"
+                    if self.alertLevel < 5:
+                        self.alertLevel += 1
+                    AlertSound(self.alertLevel)
+                else:
+                    #눈을 뜬 상태
+                    self.strIsEyes = "true"
+                    if self.alertLevel > 0:
+                        self.alertLevel -= 1
 
             else:
+                self.strIsFace = "false"
+            timer.start()
+
+        if self.running:
+            print(self.running)
+            detectTimer()
+        print('여기는?')
+
+        prevTime = 0 #FPS 계산용
+
+        while True:
+            frame = CSI.readFrame()
+            if frame is None:
                 QMessageBox.about(self, "Error", "Cannot read frame.") # 오류발생 수정 필요!
-                
                 print("cannot read frame.")
                 break
-        cap.release()
-        print("Thread end.")
+
+            curTime = time.time()
+            sec = curTime - prevTime
+            prevTime = curTime
+            fps = 1/(sec)
+
+            labFPS = "FPS: %0.1f" % fps
+            labFace = f"Face: {self.strIsFace}"
+            labEyes = f"Eyes: {self.strIsEyes}"
+
+            cv2.rectangle(frame, (self.x1, self.y1), (self.x2, self.y2), (0, 255, 0))
+            cv2.putText(frame, labFPS, (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 1, cv2.LINE_AA)
+            cv2.putText(frame, labFace, (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 1, cv2.LINE_AA)
+            cv2.putText(frame, labEyes, (10, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 1, cv2.LINE_AA)
+
+
+            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            h, w, c = frame.shape
+            qImg = QImage(frame.data, w, h, w*c, QImage.Format_RGB888)
+            pixmap = QPixmap.fromImage(qImg)
+            self.label.setPixmap(pixmap)
+
+
+
+        CSI.releaseCamera()
+        cv2.destroyAllWindows()
+
+#        while running:
+#            img = CSI.readFrame()
+#
+##            if ret:
+#            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+#            h, w, c = img.shape
+#            qImg = QImage(img.data, w, h, w*c, QImage.Format_RGB888)
+#            pixmap = QPixmap.fromImage(qImg)
+#            self.label.setPixmap(pixmap)
+#
+##            else:
+##                QMessageBox.about(self, "Error", "Cannot read frame.") # 오류발생 수정 필요!
+##                
+##                print("cannot read frame.")
+##                break
+#        cap.release()
+#        print("Thread end.")
 
     def initUI(self):
+
+        img = np.zeros((480,640), np.uint8)
+
         play_Button = QPushButton('play')
         stop_Button = QPushButton('stop')
-
-
         self.label = QLabel()
+        sample = self.numpyQImage(img)
+        pixmap = QPixmap.fromImage(sample)
+        self.label.setPixmap(pixmap)
 
         hbox = QHBoxLayout()
         hbox.addStretch(1)
@@ -70,19 +203,21 @@ class App(QWidget):
         vbox.addStretch(1)
 
         self.setLayout(vbox)
-
         self.setWindowTitle('졸음운전 방지 시스템')
-        self.setGeometry(300, 300, 300, 200)
+        self.setGeometry(0, 0, 500, 500)
+        self.label.resize(500, 500)
+
+        th = threading.Thread(target=self.run)
+        th.daemon = True
+        th.start()
         self.show()
 
         play_Button.clicked.connect(self.play)
         stop_Button.clicked.connect(self.stop)
 
 
-
-
 if __name__ == '__main__':
-
     app = QApplication(sys.argv)
-    frame = App()
+    window = App()
     sys.exit(app.exec_())
+
