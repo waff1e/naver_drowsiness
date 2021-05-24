@@ -16,6 +16,9 @@ x1 = 0
 y1 = 0
 x2 = 0
 y2 = 0
+totalLaunchTime = 0 #10번 감을때까지 걸린 시간
+totalClosedCount = 0 #눈 감은 횟수
+timerLaunchTime = 0 #감지에 사용한 시간
 
 CSI.openCamera()
 #CSI.openCameraUSB(0)
@@ -33,7 +36,9 @@ frame  = CSI.readFrame()
 
 # 여기에 타이머 관련 코드 삽입
 def detectTimer():
-    timer = threading.Timer(0.01, detectTimer)
+    global timerLaunchTime
+    st = time.time()
+    timer = threading.Timer(0.3 - timerLaunchTime, detectTimer)
     timer.name = "Detector_Timer"
     timer.daemon = True
 
@@ -43,25 +48,49 @@ def detectTimer():
     global strIsFace
     global strIsEyes
     global alertLevel
+    global totalClosedCount
+    global totalLaunchTime
 
     if isFace is True:
         strIsFace = "true"
         if ED.DetectEyes(face_frame) is False:
             #눈 감긴 상태
-            strIsEyes = "false"
-            if alertLevel < 5:
-                alertLevel += 1
-	
-            AlertSound(alertLevel)
-            print('ooo')
+            # strIsEyes = "false"
+            # if alertLevel < 5:
+            #     alertLevel += 1
+            # AlertSound(alertLevel)
+            totalClosedCount += 1
+            print("Total Closed: " + str(totalClosedCount))
+            
+            
+            if totalClosedCount >= 33:
+                print("totalClosedCount is 10")
+                print("totalClosedCount" + str(totalClosedCount) + "totalLaunchTime" + str(totalLaunchTime))
+                if totalClosedCount / totalLaunchTime >= 0.15:
+                    if alertLevel < 5:
+                        alertLevel += 1
+                    AlertSound(alertLevel)
+                else:
+                    if alertLevel > 0:
+                        alertLevel -= 1
+                totalClosedCount = 0
+                totalLaunchTime = 0
+            
         else:
             #눈을 뜬 상태
             strIsEyes = "true"
-            if alertLevel > 0:
-                alertLevel -= 1
+            # if alertLevel > 0:
+            #     alertLevel -= 1
 
     else:
         strIsFace = "false"
+    
+    totalLaunchTime += 1
+    et =time.time()
+    timerLaunchTime = et - st
+    print('time:', timerLaunchTime)
+    if timerLaunchTime >= 0.3:
+        timerLaunchTime = 0
     timer.start()
 
 detectTimer()
