@@ -18,14 +18,17 @@ class App(QWidget):
 
         # CSI.openCameraUSB(0)
 
+        self.fps = 0.
         self.strIsFace = "false"  # 얼굴 있는지 없는지
         self.strIsEyes = "false"  # 눈 있는지 없는지
+
         self.alertLevel = 0  # 경고 단계
         self.x1 = 0
         self.y1 = 0
         self.x2 = 0
         self.y2 = 0
         self.running = False
+        self.func = None
 
         self.initUI()
 
@@ -60,6 +63,7 @@ class App(QWidget):
 
     def play(self):
         self.running = True
+        self.func()
 
         # th = threading.Thread(target=self.run)
         # th.daemon = True
@@ -68,7 +72,13 @@ class App(QWidget):
 
     def stop(self):
         self.running = False
+        # time.sleep(0.3)
         print("Stop!")
+        self.x1 = 0
+        self.x2 = 0
+        self.y1 = 0
+        self.y2 = 0
+        
 
     def run(self):
         CSI = CSICamera(640, 480, 640, 480, 30)
@@ -77,22 +87,24 @@ class App(QWidget):
         width = CSI.getWidth()
         height = CSI.getHeight()
 
-        self.label.resize(int(width), int(height))
+        
+
+        self.video_display.resize(int(width), int(height))
 
         ED = EyeDetector('load_file')
 
 
 
         if  CSI.isCameraOpened() is False:
-            print("카메라에 연결되어있지 않습니다.")
+            print("카메라에 연결되어있지 않습니다.") 
             exit()
-
-        cv2.namedWindow("frame")
+        #cv2.namedWindow("frame") # GUI 창이 하나 더 생겨서 주석 처리 함
         if ED.isModelNotLoaded():
             print("모델 데이터 로드에 실패하였습니다.")
             exit()
 
         frame  = CSI.readFrame()
+        # frame = cv2.resize(frame, dsize=(640, 480), interpolation=cv2.INTER_LINEAR)
 
 # 여기에 타이머 관련 코드 삽입
         def detectTimer():
@@ -119,17 +131,29 @@ class App(QWidget):
 
             else:
                 self.strIsFace = "false"
+            if self.running is False:
+                return
             timer.start()
 
-        if self.running:
-            print(self.running)
-            detectTimer()
-        print('여기는?')
+        # def checkisTrue():
+        #     check_timer = threading.Timer(1, checkisTrue)
+        #     check_timer.name = "Check_Timer"
+        #     check_timer.daemon = True
+
+        #     if self.running is True: # Play버튼 클릭 이벤트가 발생하면 s@@@@Play 버튼 이벤트 처리 후 지울 것
+        #        self.True
+
+        #     else:
+
+            
+
 
         prevTime = 0 #FPS 계산용
+        self.func = detectTimer
 
         while True:
             frame = CSI.readFrame()
+            frame = cv2.resize(frame, dsize=(640, 480), interpolation=cv2.INTER_LINEAR)
             if frame is None:
                 QMessageBox.about(self, "Error", "Cannot read frame.") # 오류발생 수정 필요!
                 print("cannot read frame.")
@@ -138,13 +162,14 @@ class App(QWidget):
             curTime = time.time()
             sec = curTime - prevTime
             prevTime = curTime
-            fps = 1/(sec)
+            self.fps = 1/(sec)
 
-            labFPS = "FPS: %0.1f" % fps
+            labFPS = "FPS: %0.1f" % self.fps
             labFace = f"Face: {self.strIsFace}"
             labEyes = f"Eyes: {self.strIsEyes}"
 
             cv2.rectangle(frame, (self.x1, self.y1), (self.x2, self.y2), (0, 255, 0))
+            print(self.x1, self.x2, self.y1, self.y2)
             cv2.putText(frame, labFPS, (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 1, cv2.LINE_AA)
             cv2.putText(frame, labFace, (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 1, cv2.LINE_AA)
             cv2.putText(frame, labEyes, (10, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 1, cv2.LINE_AA)
@@ -154,7 +179,7 @@ class App(QWidget):
             h, w, c = frame.shape
             qImg = QImage(frame.data, w, h, w*c, QImage.Format_RGB888)
             pixmap = QPixmap.fromImage(qImg)
-            self.label.setPixmap(pixmap)
+            self.video_display.setPixmap(pixmap)
 
 
 
@@ -183,21 +208,35 @@ class App(QWidget):
 
         img = np.zeros((480,640), np.uint8)
 
+        # 버튼 추가
         play_Button = QPushButton('play')
         stop_Button = QPushButton('stop')
-        self.label = QLabel()
+
+        # 레이블 추가
+        self.video_display = QLabel()
+        self.framerate_label = QLabel(f'FPS:{self.fps}', self)
+        self.face_check_label = QLabel(f'얼굴인식:{self.strIsFace}', self)
+        self.eye_check_label = QLabel(f'눈인식:{self.strIsEyes}', self)
+
+        # 화면 초기화
         sample = self.numpyQImage(img)
         pixmap = QPixmap.fromImage(sample)
-        self.label.setPixmap(pixmap)
+        self.video_display.setPixmap(pixmap)
 
+        # 레이아웃 설정
         hbox = QHBoxLayout()
         hbox.addStretch(1)
-        hbox.addWidget(self.label)
+        hbox.addWidget(self.video_display)
         hbox.addWidget(play_Button)
         hbox.addWidget(stop_Button)
         hbox.addStretch(1)
 
         vbox = QVBoxLayout()
+
+        vbox.addStretch(1)
+        vbox.addWidget(self.framerate_label)
+        vbox.addWidget(self.face_check_label)
+        vbox.addWidget(self.eye_check_label)
         vbox.addStretch(3)
         vbox.addLayout(hbox)
         vbox.addStretch(1)
@@ -205,7 +244,7 @@ class App(QWidget):
         self.setLayout(vbox)
         self.setWindowTitle('졸음운전 방지 시스템')
         self.setGeometry(0, 0, 500, 500)
-        self.label.resize(500, 500)
+        self.video_display.resize(500, 500)
 
         th = threading.Thread(target=self.run)
         th.daemon = True
